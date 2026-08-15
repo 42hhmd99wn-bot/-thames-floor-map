@@ -76,7 +76,7 @@
     <div class="card">
       <h3 style="margin-top:0">新台カラー</h3><div class="row"><div class="field"><label>背景</label><input id="newBg" type="color"></div><div class="field"><label>文字</label><input id="newFg" type="color"></div></div>
     </div>
-    <div class="card"><h3 style="margin-top:0">シリーズ追加</h3><div class="row"><div class="field"><label>シリーズ名</label><input id="seriesName" placeholder="例：海物語"></div><button id="addSeries" class="btn primary">追加</button></div></div>
+    <div class="notice okNotice"><b>シリーズに設定すると、フロアマップには型式名ではなくシリーズ名を表示します。</b><br>一部の1円・離れた設置だけ違う表記にしたい場合は「島から選ぶ」または「台番から選ぶ」で例外表記を設定できます。</div><div class="card"><h3 style="margin-top:0">シリーズ追加</h3><div class="row"><div class="field"><label>シリーズ名</label><input id="seriesName" placeholder="例：海物語"></div><button id="addSeries" class="btn primary">追加</button></div></div>
     <div class="card"><div id="seriesList"></div></div>
   </section>
 
@@ -85,7 +85,7 @@
   </section>
 
   <section id="panel-help" class="panel">
-    <div class="card" style="line-height:1.9"><b>基本</b><br>1. 島図.xlsxを読み込み<br>2. 機種名編集で「島」「台番」「○番〜○番」から編集<br>3. 同一型式は共通表記を1回変えれば全部反映<br>4. 1台だけ違う名前にしたい場合は台番個別表記（改行で2行表示も可）<br>5. PNGを書き出し<br><br><b>原紙について</b><br>島の位置は原紙1086×1536から直接取得した固定座標です。標準時は赤・緑を塗り直さないため、原紙と色・位置がずれません。島図.xlsxのグレー部分は柱として島内配置に反映します。<br><br><b>iPhone</b><br>「ファイル」アプリのHTMLプレビューでは動かないため、GitHub PagesなどのURLをSafariで開いてください。</div>
+    <div class="card" style="line-height:1.9"><b>基本</b><br>1. 島図.xlsxを読み込み<br>2. 機種名編集で「島」「台番」「○番〜○番」から編集<br>3. シリーズ設定した機種はフロアマップにシリーズ名を表示<br>4. 同一型式は共通表記を1回変えれば全部反映<br>4. 1台だけ違う名前にしたい場合は台番個別表記（改行で2行表示も可）<br>5. PNGを書き出し<br><br><b>原紙について</b><br>島の位置は原紙1086×1536から直接取得した固定座標です。標準時は赤・緑を塗り直さないため、原紙と色・位置がずれません。島図.xlsxのグレー部分は柱として島内配置に反映します。<br><br><b>iPhone</b><br>「ファイル」アプリのHTMLプレビューでは動かないため、GitHub PagesなどのURLをSafariで開いてください。</div>
   </section>
 </div>
 <script>
@@ -107,11 +107,29 @@ function zoneById(id){return ZONES.find(z=>z.id===id)}
 function zoneForNo(n){return ZONES.find(z=>parseSpec(z.nums).includes(Number(n)))||null}
 function zoneLabel(z){const nums=parseSpec(z.nums);return `${formatNums(nums)}番台（${z.o==='v'?'縦島':'横島'}）`}
 function modelNums(raw){const a=[];for(const [n,m] of state.machineMap)if(m===raw)a.push(n);return a.sort((a,b)=>a-b)}
+function zoneContiguousBlocks(z){
+  const ordered=parseSpec(z.nums).filter(n=>state.machineMap.get(n));
+  const blocks=[];
+  for(const n of ordered){
+    const raw=state.machineMap.get(n),last=blocks[blocks.length-1];
+    if(last&&last.raw===raw){last.nums.push(n)}else blocks.push({raw,nums:[n]});
+  }
+  return blocks;
+}
+function blockOverrideValue(nums){
+  const vals=nums.map(n=>(getOverride(n).display||''));
+  return vals.length&&vals.every(v=>v===vals[0])?vals[0]:'';
+}
+function blockOverrideExtra(nums){
+  const label=formatNums(nums),v=blockOverrideValue(nums);
+  return `<div class="override blockOverrideBox"><label class="label">この設置ブロックだけ別表記</label><textarea class="nameInput blockOverride" data-nums="${esc(nums.join(','))}" rows="2" placeholder="空欄＝シリーズ名／共通表記を使用">${esc(v)}</textarea><div class="small">${esc(label)}番台だけに反映します。1円だけ略称、離れた設置だけ別名、などに使えます。</div><button class="btn clearBlockOverride" data-nums="${esc(nums.join(','))}" style="margin-top:7px">このブロックの個別表記を解除</button></div>`;
+}
+
 function ensureModel(raw){if(!state.config.models[raw])state.config.models[raw]={display:cleanModel(raw),mode:'standard',series:'',bg:'#333333',fg:'#ffffff',isNew:false};return state.config.models[raw]}
 function getOverride(n){return state.config.overrides[String(n)]||{}}
 function setOverride(n,v){const k=String(n),t=String(v||'').trim();if(t)state.config.overrides[k]={display:t};else delete state.config.overrides[k];saveConfig()}
-function styleFor(n,raw){const m=ensureModel(raw),ov=getOverride(n),display=ov.display||m.display||cleanModel(raw);if(m.isNew)return {display,fill:state.config.newStyle.bg,fg:state.config.newStyle.fg};if(m.mode==='individual')return {display,fill:m.bg,fg:m.fg};if(m.mode==='series'&&m.series&&state.config.series[m.series]){const s=state.config.series[m.series];return {display,fill:s.bg,fg:s.fg}}return {display,fill:null,fg:'#ffffff'}}
-function renderKey(n,raw){if(!raw)return `missing:${n}`;const s=styleFor(n,raw);return JSON.stringify([raw,s.display,s.fill,s.fg])}
+function styleFor(n,raw){const m=ensureModel(raw),ov=getOverride(n);const seriesActive=m.mode==='series'&&m.series&&state.config.series[m.series];const display=ov.display||(seriesActive?m.series:(m.display||cleanModel(raw)));if(m.isNew)return {display,fill:state.config.newStyle.bg,fg:state.config.newStyle.fg};if(m.mode==='individual')return {display,fill:m.bg,fg:m.fg};if(seriesActive){const s=state.config.series[m.series];return {display,fill:s.bg,fg:s.fg}}return {display,fill:null,fg:'#ffffff'}}
+function renderKey(n,raw){if(!raw)return `missing:${n}`;const s=styleFor(n,raw);return JSON.stringify([s.display,s.fill,s.fg])}
 function zoneGroups(z){let allNums=parseSpec(z.nums);if(z.o==='v')allNums=[...allNums].sort((a,b)=>b-a);const nums=allNums.filter(n=>state.machineMap.get(n));const groups=[];for(const n of nums){const raw=state.machineMap.get(n)||null;if(!raw)continue;const key=renderKey(n,raw),last=groups[groups.length-1];if(last&&last.key===key){last.nums.push(n);last.count++}else groups.push({key,raw,nums:[n],count:1})}return {nums,groups}}
 const PILLAR_END_PX={
   'R-H08':23,  // 原紙グレー：740〜726番台の島 右端
@@ -415,10 +433,23 @@ function parsePastedMachineMap(text){
 function refreshSheet(){const sh=state.workbook?.sheets.find(x=>x.name===state.sheet);if(sh)applyMap(extractMachineMap(sh),state.sheet)}
 function setTab(name){document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id==='panel-'+name))}
 function setMode(name){document.querySelectorAll('.modeBtn').forEach(b=>b.classList.toggle('active',b.dataset.mode===name));document.querySelectorAll('.modePanel').forEach(p=>p.classList.toggle('active',p.id==='mode-'+name));if(name==='island')renderIsland();if(name==='machine')renderMachine();if(name==='range')renderRange();if(name==='all')renderAll()}
-function commonCard(raw,nums,extra=''){const m=ensureModel(raw),seriesNames=Object.keys(state.config.series).sort((a,b)=>a.localeCompare(b,'ja'));return `<div class="editCard" data-raw="${esc(raw)}"><div class="head"><span class="badge">${esc(formatNums(nums))}番台</span><span class="badge light">同型式 ${modelNums(raw).length}台</span></div><div class="raw">型式：${esc(cleanModel(raw))}</div><label class="label">共通表記（同じ型式すべてに反映）</label><div class="small" style="margin-bottom:5px">縦島はEnterで改行すると、1行目＝右列／2行目＝左列の2列縦書きになります。</div><textarea class="nameInput commonName" rows="2">${esc(m.display||cleanModel(raw))}</textarea>${extra}<div class="modelOptions"><label>表示方法<select class="modelMode"><option value="standard" ${m.mode==='standard'?'selected':''}>標準（原紙色）</option><option value="series" ${m.mode==='series'?'selected':''}>シリーズでまとめる</option><option value="individual" ${m.mode==='individual'?'selected':''}>個別色</option></select></label><label>所属シリーズ<select class="modelSeries"><option value="">シリーズ未選択</option>${seriesNames.map(s=>`<option ${m.series===s?'selected':''}>${esc(s)}</option>`).join('')}</select></label><label>背景<input class="modelBg" type="color" value="${m.bg||'#333333'}"></label><label>文字<input class="modelFg" type="color" value="${m.fg||'#ffffff'}"></label></div><label style="display:block;margin-top:8px;font-weight:800"><input class="modelNew" type="checkbox" ${m.isNew?'checked':''}> 新台カラーを優先</label></div>`}
+function commonCard(raw,nums,extra=''){const m=ensureModel(raw),seriesNames=Object.keys(state.config.series).sort((a,b)=>a.localeCompare(b,'ja'));return `<div class="editCard" data-raw="${esc(raw)}"><div class="head"><span class="badge">${esc(formatNums(nums))}番台</span><span class="badge light">同型式 ${modelNums(raw).length}台</span></div><div class="raw">型式：${esc(cleanModel(raw))}</div><label class="label">共通表記（同じ型式すべてに反映）</label><div class="small" style="margin-bottom:5px">縦島はEnterで改行すると、1行目＝右列／2行目＝左列の2列縦書きになります。</div><textarea class="nameInput commonName" rows="2">${esc(m.display||cleanModel(raw))}</textarea>${extra}<div class="modelOptions"><label>表示方法<select class="modelMode"><option value="standard" ${m.mode==='standard'?'selected':''}>標準（原紙色）</option><option value="series" ${m.mode==='series'?'selected':''}>シリーズ名で表示</option><option value="individual" ${m.mode==='individual'?'selected':''}>個別色</option></select></label><label>表示するシリーズ名<select class="modelSeries"><option value="">シリーズ未選択</option>${seriesNames.map(s=>`<option ${m.series===s?'selected':''}>${esc(s)}</option>`).join('')}</select></label><label>背景<input class="modelBg" type="color" value="${m.bg||'#333333'}"></label><label>文字<input class="modelFg" type="color" value="${m.fg||'#ffffff'}"></label></div><label style="display:block;margin-top:8px;font-weight:800"><input class="modelNew" type="checkbox" ${m.isNew?'checked':''}> 新台カラーを優先</label></div>`}
 function bindCommon(container){container.oninput=e=>{const card=e.target.closest('[data-raw]');if(!card)return;const raw=card.dataset.raw,m=ensureModel(raw);if(e.target.classList.contains('commonName'))m.display=e.target.value;if(e.target.classList.contains('modelBg'))m.bg=e.target.value;if(e.target.classList.contains('modelFg'))m.fg=e.target.value;saveConfig();renderMap()};container.onchange=e=>{const card=e.target.closest('[data-raw]');if(!card)return;const m=ensureModel(card.dataset.raw);if(e.target.classList.contains('modelMode'))m.mode=e.target.value;if(e.target.classList.contains('modelSeries'))m.series=e.target.value;if(e.target.classList.contains('modelNew'))m.isNew=e.target.checked;saveConfig();renderMap()}}
 function renderIslandSelect(){el('islandSelect').innerHTML=ZONES.map(z=>`<option value="${z.id}" ${z.id===state.selectedZone?'selected':''}>${esc(zoneLabel(z))}</option>`).join('')}
-function renderIsland(){renderIslandSelect();const box=el('islandResult'),z=zoneById(state.selectedZone);if(!z){box.innerHTML='<div class="empty">島を選択してください。</div>';return}const nums=parseSpec(z.nums);el('islandInfo').textContent=`${zoneLabel(z)} / 原紙：${z.paper==='green'?'緑':'赤'}`;if(!state.machineMap.size){box.innerHTML='<div class="empty">先に島図Excelを読み込んでください。</div>';return}const by=new Map();for(const n of nums){const raw=state.machineMap.get(n);if(!raw)continue;if(!by.has(raw))by.set(raw,[]);by.get(raw).push(n)}box.innerHTML=[...by].map(([raw,ns])=>commonCard(raw,ns)).join('')||'<div class="empty">この島に機種データがありません。空き・柱部分は原紙のまま残します。</div>';bindCommon(box)}
+function renderIsland(){renderIslandSelect();const box=el('islandResult'),z=zoneById(state.selectedZone);if(!z){box.innerHTML='<div class="empty">島を選択してください。</div>';return}el('islandInfo').textContent=`${zoneLabel(z)} / 原紙：${z.paper==='green'?'緑':'赤'} / 連続している設置ブロック単位で例外表記できます`;if(!state.machineMap.size){box.innerHTML='<div class="empty">先に島図Excelを読み込んでください。</div>';return}const blocks=zoneContiguousBlocks(z);box.innerHTML=blocks.map(b=>commonCard(b.raw,b.nums,blockOverrideExtra(b.nums))).join('')||'<div class="empty">この島に機種データがありません。空き・柱部分は原紙のまま残します。</div>';bindCommon(box);box.addEventListener('input',onBlockOverrideInput);box.addEventListener('click',onBlockOverrideClick)}
+
+function onBlockOverrideInput(e){
+  if(!e.target.classList.contains('blockOverride'))return;
+  const nums=String(e.target.dataset.nums||'').split(',').map(Number).filter(Number.isFinite);
+  nums.forEach(n=>setOverride(n,e.target.value));
+  renderMap();
+}
+function onBlockOverrideClick(e){
+  if(!e.target.classList.contains('clearBlockOverride'))return;
+  const nums=String(e.target.dataset.nums||'').split(',').map(Number).filter(Number.isFinite);
+  nums.forEach(n=>setOverride(n,''));
+  renderIsland();renderMap();
+}
 function renderMachine(){const box=el('machineResult'),v=(el('machineNo').value||'').trim();if(!v){box.innerHTML='<div class="empty">台番を入力してください。</div>';return}const n=Number(v),raw=state.machineMap.get(n);if(!raw){box.innerHTML=`<div class="empty">${esc(v)}番台の機種データがありません。柱・空きの場合は原紙のまま残ります。</div>`;return}const ov=getOverride(n),z=zoneForNo(n),extra=`<div class="override"><label class="label">${n}番台だけの個別表記</label><textarea class="nameInput machineOverride" data-no="${n}" rows="2" placeholder="空欄＝共通表記を使用">${esc(ov.display||'')}</textarea><div class="small">4円は正式名、1円の1台だけ略称、のような使い分けに使えます。改行すると縦島でも2行表示できます。</div><button class="btn clearOverride" data-no="${n}" style="margin-top:7px">個別表記を解除</button></div>`;box.innerHTML=commonCard(raw,[n],extra)+(z?`<div class="small">所属：${esc(zoneLabel(z))}</div>`:'');bindCommon(box);box.oninput=e=>{if(e.target.classList.contains('machineOverride')){setOverride(e.target.dataset.no,e.target.value);renderMap();return}const card=e.target.closest('[data-raw]');if(!card)return;const m=ensureModel(card.dataset.raw);if(e.target.classList.contains('commonName'))m.display=e.target.value;if(e.target.classList.contains('modelBg'))m.bg=e.target.value;if(e.target.classList.contains('modelFg'))m.fg=e.target.value;saveConfig();renderMap()};box.onclick=e=>{if(e.target.classList.contains('clearOverride')){setOverride(e.target.dataset.no,'');renderMachine();renderMap()}}}
 function rangeNumbers(){const a=Number(el('rangeStart').value),b=Number(el('rangeEnd').value);if(!Number.isInteger(a)||!Number.isInteger(b))return[];const lo=Math.min(a,b),hi=Math.max(a,b),out=[];for(let n=lo;n<=hi;n++)if(state.machineMap.has(n))out.push(n);return out}
 function renderRange(){const box=el('rangeResult'),nums=rangeNumbers();if(!el('rangeStart').value||!el('rangeEnd').value){box.innerHTML='<div class="empty">開始台番と終了台番を入力してください。</div>';return}if(!nums.length){box.innerHTML='<div class="empty">その範囲に機種データがありません。</div>';return}const by=new Map();for(const n of nums){const raw=state.machineMap.get(n);if(!by.has(raw))by.set(raw,[]);by.get(raw).push(n)}box.innerHTML=`<div class="rangeSummary">対象：${esc(formatNums(nums))}番台 / ${nums.length}台 / ${by.size}型式</div><div class="card"><label class="label">この範囲すべてに同じ「台番個別表記」を一括設定</label><textarea id="bulkRangeName" class="nameInput" rows="2" placeholder="同じ名前をまとめて入れる場合のみ入力"></textarea><div class="small" style="margin-top:6px">改行すると縦島でも2行表示できます。</div><div class="row" style="margin-top:8px"><button id="applyRangeName" class="btn primary">範囲に一括適用</button><button id="clearRangeName" class="btn">範囲の個別表記を解除</button></div></div>`+[...by].map(([raw,ns])=>commonCard(raw,ns)).join('');bindCommon(box);el('applyRangeName').onclick=()=>{const v=el('bulkRangeName').value;nums.forEach(n=>setOverride(n,v));renderMap();renderRange()};el('clearRangeName').onclick=()=>{nums.forEach(n=>setOverride(n,''));renderMap();renderRange()}}
