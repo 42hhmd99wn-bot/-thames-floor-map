@@ -72,6 +72,7 @@
   </section>
 
   <section id="panel-series" class="panel">
+    <div class="notice okNotice"><b>シリーズ分けできます。</b> ①ここでシリーズを作成 → ②「機種名編集」で対象機種の表示方法を「シリーズでまとめる」に変更 → ③所属シリーズを選択、の順です。同じシリーズは同じ背景色・文字色で表示されます。</div>
     <div class="card">
       <h3 style="margin-top:0">新台カラー</h3><div class="row"><div class="field"><label>背景</label><input id="newBg" type="color"></div><div class="field"><label>文字</label><input id="newFg" type="color"></div></div>
     </div>
@@ -111,7 +112,7 @@ function getOverride(n){return state.config.overrides[String(n)]||{}}
 function setOverride(n,v){const k=String(n),t=String(v||'').trim();if(t)state.config.overrides[k]={display:t};else delete state.config.overrides[k];saveConfig()}
 function styleFor(n,raw){const m=ensureModel(raw),ov=getOverride(n),display=ov.display||m.display||cleanModel(raw);if(m.isNew)return {display,fill:state.config.newStyle.bg,fg:state.config.newStyle.fg};if(m.mode==='individual')return {display,fill:m.bg,fg:m.fg};if(m.mode==='series'&&m.series&&state.config.series[m.series]){const s=state.config.series[m.series];return {display,fill:s.bg,fg:s.fg}}return {display,fill:null,fg:'#ffffff'}}
 function renderKey(n,raw){if(!raw)return `missing:${n}`;const s=styleFor(n,raw);return JSON.stringify([raw,s.display,s.fill,s.fg])}
-function zoneGroups(z){const allNums=parseSpec(z.nums);const nums=allNums.filter(n=>state.machineMap.get(n));const groups=[];for(const n of nums){const raw=state.machineMap.get(n)||null;if(!raw)continue;const key=renderKey(n,raw),last=groups[groups.length-1];if(last&&last.key===key){last.nums.push(n);last.count++}else groups.push({key,raw,nums:[n],count:1})}return {nums,groups}}
+function zoneGroups(z){let allNums=parseSpec(z.nums);if(z.o==='v')allNums=[...allNums].sort((a,b)=>b-a);const nums=allNums.filter(n=>state.machineMap.get(n));const groups=[];for(const n of nums){const raw=state.machineMap.get(n)||null;if(!raw)continue;const key=renderKey(n,raw),last=groups[groups.length-1];if(last&&last.key===key){last.nums.push(n);last.count++}else groups.push({key,raw,nums:[n],count:1})}return {nums,groups}}
 const PILLAR_END_PX={
   'R-H08':23,  // 原紙グレー：740〜726番台の島 右端
   'R-H17':23,  // 原紙グレー：677〜663番台の島 右端
@@ -124,20 +125,39 @@ function zoneUsableRect(z){
 function normalizeV(ch){if(/[A-Za-z0-9]/.test(ch))return String.fromCharCode(ch.charCodeAt(0)+0xFEE0);const m={' ':'　','-':'｜','ｰ':'｜','―':'｜','–':'｜','—':'｜','－':'｜','/':'／','\\':'＼','(':'（',')':'）','[':'［',']':'］',':':'：',';':'；','.':'・',',':'、','?':'？','!':'！','+':'＋','=':'＝','&':'＆','%':'％','#':'＃'};return m[ch]||ch}
 function drawHorizontal(ctx,text,r){const lines=String(text||'').replace(/\r/g,'').split('\n'),pad=2,maxW=Math.max(2,r.w-pad*2);let size=Math.min(22,(r.h-pad*2)/Math.max(1,lines.length)*.82);size=Math.max(5,size);while(size>5){ctx.font=`700 ${size}px "Yu Gothic",Meiryo,sans-serif`;if(lines.every(x=>ctx.measureText(x).width<=maxW))break;size-=.4}const lh=size*1.06,total=lh*lines.length;ctx.textAlign='center';ctx.textBaseline='middle';lines.forEach((line,i)=>ctx.fillText(line,r.x+r.w/2,r.y+r.h/2-total/2+lh*(i+.5),maxW))}
 function drawVertical(ctx,text,r){
-  const lines=String(text||'').replace(/\r/g,'').split('\n').map(x=>[...x].map(normalizeV).join(''));
-  const pad=2,cols=Math.max(1,lines.length),maxChars=Math.max(1,...lines.map(x=>[...x].length));
-  let size=Math.min(20,(r.w-pad*2)/cols*.80,(r.h-pad*2)/maxChars*.90);
-  size=Math.max(4,size);
+  let src=String(text||'').replace(/\r/g,'');
+  let lines=src.split('\n');
+
+  // Enter改行を最優先。長すぎる1行は自動で2列に分割。
+  if(lines.length===1){
+    const chars=[...lines[0]];
+    const capacity=Math.max(1,Math.floor((r.h-4)/7));
+    if(chars.length>capacity){
+      const cut=Math.ceil(chars.length/2);
+      lines=[chars.slice(0,cut).join(''),chars.slice(cut).join('')];
+    }
+  }
+
+  // 最大2列：1行目＝右、2行目＝左
+  lines=lines.slice(0,2).map(x=>[...x].map(normalizeV).join(''));
+  const pad=1.5, cols=Math.max(1,lines.length);
+  const maxChars=Math.max(1,...lines.map(x=>[...x].length));
+  const colW=(r.w-pad*2)/cols;
+
+  let size=Math.min(20,colW*.82,(r.h-pad*2)/maxChars*.92);
+  size=Math.max(3.5,size);
   ctx.font=`700 ${size}px "Yu Gothic",Meiryo,sans-serif`;
   ctx.textAlign='center';
   ctx.textBaseline='middle';
-  const colW=(r.w-pad*2)/cols;
+
   lines.forEach((line,li)=>{
     const chars=[...line];
-    const step=Math.min(size*1.04,(r.h-pad*2)/Math.max(1,chars.length));
+    const step=Math.min(size*1.02,(r.h-pad*2)/Math.max(1,chars.length));
     const total=step*chars.length;
     const x=r.x+r.w-pad-colW*(li+.5);
-    chars.forEach((ch,i)=>ctx.fillText(ch,x,r.y+r.h/2-total/2+step*(i+.5),colW));
+    chars.forEach((ch,i)=>{
+      ctx.fillText(ch,x,r.y+r.h/2-total/2+step*(i+.5),Math.max(1,colW*.96));
+    });
   });
 }
 function drawMap(ctx,scale=1,guides=true){
@@ -395,7 +415,7 @@ function parsePastedMachineMap(text){
 function refreshSheet(){const sh=state.workbook?.sheets.find(x=>x.name===state.sheet);if(sh)applyMap(extractMachineMap(sh),state.sheet)}
 function setTab(name){document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id==='panel-'+name))}
 function setMode(name){document.querySelectorAll('.modeBtn').forEach(b=>b.classList.toggle('active',b.dataset.mode===name));document.querySelectorAll('.modePanel').forEach(p=>p.classList.toggle('active',p.id==='mode-'+name));if(name==='island')renderIsland();if(name==='machine')renderMachine();if(name==='range')renderRange();if(name==='all')renderAll()}
-function commonCard(raw,nums,extra=''){const m=ensureModel(raw),seriesNames=Object.keys(state.config.series).sort((a,b)=>a.localeCompare(b,'ja'));return `<div class="editCard" data-raw="${esc(raw)}"><div class="head"><span class="badge">${esc(formatNums(nums))}番台</span><span class="badge light">同型式 ${modelNums(raw).length}台</span></div><div class="raw">型式：${esc(cleanModel(raw))}</div><label class="label">共通表記（同じ型式すべてに反映）</label><textarea class="nameInput commonName" rows="2">${esc(m.display||cleanModel(raw))}</textarea>${extra}<div class="modelOptions"><label>分類<select class="modelMode"><option value="standard" ${m.mode==='standard'?'selected':''}>標準（原紙色）</option><option value="series" ${m.mode==='series'?'selected':''}>シリーズ</option><option value="individual" ${m.mode==='individual'?'selected':''}>個別色</option></select></label><label>シリーズ<select class="modelSeries"><option value="">—</option>${seriesNames.map(s=>`<option ${m.series===s?'selected':''}>${esc(s)}</option>`).join('')}</select></label><label>背景<input class="modelBg" type="color" value="${m.bg||'#333333'}"></label><label>文字<input class="modelFg" type="color" value="${m.fg||'#ffffff'}"></label></div><label style="display:block;margin-top:8px;font-weight:800"><input class="modelNew" type="checkbox" ${m.isNew?'checked':''}> 新台カラーを優先</label></div>`}
+function commonCard(raw,nums,extra=''){const m=ensureModel(raw),seriesNames=Object.keys(state.config.series).sort((a,b)=>a.localeCompare(b,'ja'));return `<div class="editCard" data-raw="${esc(raw)}"><div class="head"><span class="badge">${esc(formatNums(nums))}番台</span><span class="badge light">同型式 ${modelNums(raw).length}台</span></div><div class="raw">型式：${esc(cleanModel(raw))}</div><label class="label">共通表記（同じ型式すべてに反映）</label><div class="small" style="margin-bottom:5px">縦島はEnterで改行すると、1行目＝右列／2行目＝左列の2列縦書きになります。</div><textarea class="nameInput commonName" rows="2">${esc(m.display||cleanModel(raw))}</textarea>${extra}<div class="modelOptions"><label>表示方法<select class="modelMode"><option value="standard" ${m.mode==='standard'?'selected':''}>標準（原紙色）</option><option value="series" ${m.mode==='series'?'selected':''}>シリーズでまとめる</option><option value="individual" ${m.mode==='individual'?'selected':''}>個別色</option></select></label><label>所属シリーズ<select class="modelSeries"><option value="">シリーズ未選択</option>${seriesNames.map(s=>`<option ${m.series===s?'selected':''}>${esc(s)}</option>`).join('')}</select></label><label>背景<input class="modelBg" type="color" value="${m.bg||'#333333'}"></label><label>文字<input class="modelFg" type="color" value="${m.fg||'#ffffff'}"></label></div><label style="display:block;margin-top:8px;font-weight:800"><input class="modelNew" type="checkbox" ${m.isNew?'checked':''}> 新台カラーを優先</label></div>`}
 function bindCommon(container){container.oninput=e=>{const card=e.target.closest('[data-raw]');if(!card)return;const raw=card.dataset.raw,m=ensureModel(raw);if(e.target.classList.contains('commonName'))m.display=e.target.value;if(e.target.classList.contains('modelBg'))m.bg=e.target.value;if(e.target.classList.contains('modelFg'))m.fg=e.target.value;saveConfig();renderMap()};container.onchange=e=>{const card=e.target.closest('[data-raw]');if(!card)return;const m=ensureModel(card.dataset.raw);if(e.target.classList.contains('modelMode'))m.mode=e.target.value;if(e.target.classList.contains('modelSeries'))m.series=e.target.value;if(e.target.classList.contains('modelNew'))m.isNew=e.target.checked;saveConfig();renderMap()}}
 function renderIslandSelect(){el('islandSelect').innerHTML=ZONES.map(z=>`<option value="${z.id}" ${z.id===state.selectedZone?'selected':''}>${esc(zoneLabel(z))}</option>`).join('')}
 function renderIsland(){renderIslandSelect();const box=el('islandResult'),z=zoneById(state.selectedZone);if(!z){box.innerHTML='<div class="empty">島を選択してください。</div>';return}const nums=parseSpec(z.nums);el('islandInfo').textContent=`${zoneLabel(z)} / 原紙：${z.paper==='green'?'緑':'赤'}`;if(!state.machineMap.size){box.innerHTML='<div class="empty">先に島図Excelを読み込んでください。</div>';return}const by=new Map();for(const n of nums){const raw=state.machineMap.get(n);if(!raw)continue;if(!by.has(raw))by.set(raw,[]);by.get(raw).push(n)}box.innerHTML=[...by].map(([raw,ns])=>commonCard(raw,ns)).join('')||'<div class="empty">この島に機種データがありません。空き・柱部分は原紙のまま残します。</div>';bindCommon(box)}
