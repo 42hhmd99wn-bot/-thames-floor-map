@@ -135,9 +135,11 @@ function styleFor(n,raw){const m=ensureModel(raw),ov=getOverride(n);const series
 function renderKey(n,raw){if(!raw)return `missing:${n}`;const s=styleFor(n,raw);return JSON.stringify([s.display,s.fill,s.fg])}
 function zoneGroups(z){let allNums=parseSpec(z.nums);/* 縦島：島設定の並びを上下反転して描画。例 G-V08 は上397→下408となり、いせれべ(407/408)が下側。 */if(z.o==='v')allNums=[...allNums].reverse();const nums=allNums.filter(n=>state.machineMap.get(n));const groups=[];for(const n of nums){const raw=state.machineMap.get(n)||null;if(!raw)continue;const key=renderKey(n,raw),last=groups[groups.length-1];if(last&&last.key===key){last.nums.push(n);last.count++}else groups.push({key,raw,nums:[n],count:1})}return {nums,groups}}
 const PILLAR_END_PX={
-  'R-H08':21,  // 原紙実測：740〜726番台の島 右端グレー21px
-  'R-H17':21,  // 原紙実測：677〜663番台の島 右端グレー21px
-  'R-H22':20   // 原紙実測：616〜630番台の島 右端グレー20px
+  // 原紙のJPEG境界ぼかしまで柱側として確保。
+  // 機種背景・文字がグレーへ1pxでも食い込まないよう余裕を追加。
+  'R-H08':24,
+  'R-H17':24,
+  'R-H22':23
 };
 function zoneUsableRect(z){
   const p=PILLAR_END_PX[z.id]||0;
@@ -151,7 +153,7 @@ function drawHorizontal(ctx,text,r){
   const pad=1.5,maxW=Math.max(2,r.w-pad*2),availH=Math.max(2,r.h-pad*2);
   const count=Math.max(1,lines.length);
   // まず高さを最大限使う。横に長い時は文字を少し圧縮して、極端に小さくしない。
-  let size=Math.min(24,availH/count*.88);
+  let size=Math.min(17.5,availH/count*.82);
   size=Math.max(6,size);
   while(size>6){
     ctx.font=`800 ${size}px "Yu Gothic",Meiryo,sans-serif`;
@@ -168,7 +170,7 @@ function drawHorizontal(ctx,text,r){
     ctx.font=`800 ${size}px "Yu Gothic",Meiryo,sans-serif`;
     const w=Math.max(1,ctx.measureText(line).width);
     // 短い文字は少し横に伸ばし、長い文字は最大42%まで圧縮。
-    const sx=clamp(maxW/w,0.58,1.14);
+    const sx=clamp(maxW/w,0.62,1.10);
     const cx=r.x+r.w/2,cy=r.y+r.h/2-total/2+lh*(i+.5);
     ctx.save();ctx.translate(cx,cy);ctx.scale(sx,1);ctx.fillText(line,0,0);ctx.restore();
   });
@@ -189,9 +191,9 @@ function drawVertical(ctx,text,r){
   const pad=1,cols=Math.max(1,lines.length),maxChars=Math.max(1,...lines.map(x=>[...x].length));
   const colW=Math.max(2,(r.w-pad*2)/cols),availH=Math.max(2,r.h-pad*2);
   // 横幅は少し圧縮可能にして、2列でも文字サイズをできるだけ大きく保つ。
-  let size=Math.min(22,(colW/0.68)*.82,availH/maxChars*.94);
+  let size=Math.min(cols===1?15.5:12.5,(colW/0.68)*.80,availH/maxChars*.92);
   size=Math.max(4,size);
-  const glyphScaleX=clamp(colW/(size*.92),0.64,1.06);
+  const glyphScaleX=clamp(colW/(size*.92),0.68,1.04);
   const step=Math.min(size*1.00,availH/maxChars);
   ctx.font=`800 ${size}px "Yu Gothic",Meiryo,sans-serif`;
   ctx.textAlign='center';ctx.textBaseline='middle';
